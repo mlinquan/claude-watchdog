@@ -1,0 +1,23 @@
+[project]
+name = "claude-watchdog"
+version = "0.1.0"
+description = "Claude Code tmux watchdog — auto-unblock permission dialogs"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "LinQuan"}]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+homepage = "https://github.com/mlinquan/claude-watchdog"
+repository = "https://github.com/mlinquan/claude-watchdog"
+
+[project.scripts]
+claude-watchdog = "claude_watchdog.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["claude_watchdog*"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
