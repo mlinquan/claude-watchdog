@@ -32,8 +32,10 @@ def read_log(last: int = 20, follow: bool = False, session_filter: str | None = 
         cmd = ["tail", "-f", LOG_FILE]
         if last:
             cmd.insert(1, f"-n{last}")
-        proc = subprocess.run(cmd)
-        proc.check_returncode()
+        try:
+            subprocess.run(cmd)
+        except KeyboardInterrupt:
+            pass  # user exited tail -f
         return
 
     lines = []

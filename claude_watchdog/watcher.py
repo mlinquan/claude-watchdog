@@ -41,7 +41,6 @@ def capture_pane(session: str, lines: int = 15) -> str:
 
 
 def send_keys(session: str, keys: list[str]):
-    import shlex
     for key in keys:
         subprocess.run(
             ["tmux", "send-keys", "-t", session, key],
