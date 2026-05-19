@@ -84,7 +84,6 @@ dependency — without it, `--notify` is a no-op.
 | `Do you want to proceed` | 1 + Enter | Tool confirmation dialog |
 | `Do you want to (make this edit\|overwrite)` | Down + Enter | Allow all edits this session |
 | `accept edits on` | Enter | Accept pending diffs |
-| `bypass permissions on` | Enter | Bypass permission dialog |
 | `Detected a custom API key` | Up + Enter | Confirm custom API key |
 | `Interrupted` | 2 + Enter | Bypass/continue after interruption |
 | `Rate this response` / `评价` / `评分` | Escape | Dismiss evaluation dialog |

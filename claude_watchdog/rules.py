@@ -21,12 +21,6 @@ RULES = [
         "Diff review prompt — accept pending diffs",
     ),
     (
-        "bypass_permissions",
-        r"bypass permissions on",
-        ["Enter"],
-        "Permission bypass prompt — confirm bypass",
-    ),
-    (
         "custom_api_key",
         r"Detected a custom API key",
         ["Up", "Enter"],
