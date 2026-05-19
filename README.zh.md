@@ -13,22 +13,24 @@ pip install claude-watchdog
 ## 用法
 
 ```bash
-# 单次检查（执行一次就退出）
+# 管理守护进程
+claude-watchdog start              # 启动（默认监控所有 claude-* session）
+claude-watchdog stop               # 停止
+claude-watchdog restart            # 重启
+claude-watchdog status             # 查看状态 + 各 session 状态
+
+# 查看日志
+claude-watchdog log                # 默认 tail -f 实时追踪
+claude-watchdog log --no-follow    # 只看最近 N 条
+claude-watchdog log --session claude-tl  # 按 session 过滤
+
+# 单次检查（旧语法仍兼容）
 claude-watchdog --session claude-tl
-
-# 持续监控
-claude-watchdog --session claude-tl --daemon
-
-# 监控所有 claude-* session
 claude-watchdog --all --daemon
-
-# 仅提醒 — 检测到弹窗只打日志+通知，不自动按键
+claude-watchdog --session claude-tl --daemon
 claude-watchdog --session claude-tl --daemon --alert-only
-
-# 查看命中日志
 claude-watchdog --log
-claude-watchdog --log --follow       # tail -f 模式
-claude-watchdog --log --session claude-tl  # 按 session 过滤
+claude-watchdog --log --follow
 ```
 
 ## 通知方式
