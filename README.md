@@ -30,8 +30,12 @@ claude-watchdog --session claude-tl --daemon --alert-only
 
 # View hit log
 claude-watchdog --log
-claude-watchdog --log --follow       # tail -f mode
+claude-watchdog --log --follow       # tail -f mode, watch live
 claude-watchdog --log --session claude-tl  # filter by session
+
+# Restart the daemon (kills existing + starts fresh)
+claude-watchdog restart
+claude-watchdog restart --interval 10   # custom interval on restart
 ```
 
 ## Notify on hit
