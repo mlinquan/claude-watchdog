@@ -114,15 +114,43 @@ def _cmd_status(args):
             print(f"Watchdog is running (PID: {pid})")
             print(f"  Resources: {stats}")
             print(f"  Log: {os.path.expanduser('~/.local/share/claude-watchdog/hits.log')}")
-            return
         except (subprocess.TimeoutExpired, IndexError):
-            pass
-
-    pids = _find_watchdog_pids()
-    if pids:
-        print(f"Watchdog is running (PID: {', '.join(str(p) for p in pids)})")
+            print(f"Watchdog is running (PID: {pid})")
     else:
-        print("Watchdog is not running.")
+        pids = _find_watchdog_pids()
+        if pids:
+            print(f"Watchdog is running (PID: {', '.join(str(p) for p in pids)})")
+        else:
+            print("Watchdog is not running.")
+
+    # Show claude-* tmux sessions
+    print()
+    sessions = get_sessions()
+    if sessions:
+        print(f"Monitored sessions ({len(sessions)}):")
+        for s in sessions:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-t", s, "-p", "-S", "-3"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                lines = [l for l in r.stdout.strip().split("\n") if l.strip()]
+                status_line = ""
+                for line in reversed(lines):
+                    if "❯" in line or "Working" in line or "Thinking" in line or "Wibbling" in line or "Synthesizing" in line or "Seasoning" in line or "Churned" in line or "Cogitated" in line:
+                        status_line = line.strip()[:80]
+                        break
+                if status_line:
+                    print(f"  • {s}: {status_line}")
+                else:
+                    # Show last non-empty line
+                    last = [l for l in lines if l.strip()]
+                    snippet = last[-1].strip()[:80] if last else "(empty)"
+                    print(f"  • {s}: {snippet}")
+            except Exception:
+                print(f"  • {s}: (unreachable)")
+    else:
+        print("No claude-* sessions found.")
 
 
 def _cmd_restart(args):
