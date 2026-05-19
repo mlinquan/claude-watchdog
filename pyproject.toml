@@ -1,6 +1,6 @@
 [project]
 name = "claude-watchdog"
-version = "0.1.4"
+version = "0.1.5"
 description = "Claude Code tmux watchdog — auto-unblock permission dialogs"
 readme = "README.md"
 license = {text = "MIT"}

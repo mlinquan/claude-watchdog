@@ -8,12 +8,14 @@ import sys
 from .watcher import watch_loop, watch_all, get_sessions
 from .logger import read_log
 
+PID_FILE = os.path.expanduser("~/.local/share/claude-watchdog/daemon.pid")
+
 
 def _find_watchdog_pids() -> list[int]:
     """Find all running claude-watchdog daemon processes (excluding this one)."""
     try:
         r = subprocess.run(
-            ["pgrep", "-f", "claude-watchdog"],
+            ["pgrep", "-f", "claude_watchdog\\.cli"],
             capture_output=True, text=True, timeout=5,
         )
         if r.returncode != 0:
@@ -24,42 +26,116 @@ def _find_watchdog_pids() -> list[int]:
         return []
 
 
-def _do_restart(args):
+def _get_daemon_pid() -> int | None:
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+                # Check if still alive
+                os.kill(pid, 0)
+                return pid
+        except (ValueError, ProcessLookupError, OSError):
+            pass
+    # Fallback: pgrep
     pids = _find_watchdog_pids()
     if pids:
-        print(f"Stopping existing watchdog (PID: {', '.join(str(p) for p in pids)})...")
+        return pids[0]
+    return None
+
+
+def _save_pid(pid: int):
+    d = os.path.dirname(PID_FILE)
+    os.makedirs(d, exist_ok=True)
+    with open(PID_FILE, "w") as f:
+        f.write(str(pid))
+
+
+def _run_watcher(args):
+    """Internal: run the monitoring loop (called from forked child)."""
+    if args.session:
+        watch_loop(args.session, interval=args.interval, use_notify=args.notify, alert_only=args.alert_only)
+    else:
+        watch_all(interval=args.interval, use_notify=args.notify, alert_only=args.alert_only)
+
+
+def _cmd_start(args):
+    pids = _find_watchdog_pids()
+    if pids:
+        print(f"Watchdog already running (PID: {pids[0]}). Use 'stop' first or 'restart'.")
+        return
+
+    # Fork the watcher directly
+    pid = os.fork()
+    if pid > 0:
+        # Parent: record PID and return
+        _save_pid(pid)
+        print(f"Watchdog started (PID: {pid}) — watching {'all claude-* sessions' if not args.session else args.session}")
+        return
+
+    # Child: run watcher loop
+    _run_watcher(args)
+
+
+def _cmd_stop(args):
+    pid = _get_daemon_pid()
+    if pid:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            print(f"Watchdog stopped (PID: {pid})")
+        except ProcessLookupError:
+            print("Watchdog not running.")
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+        return
+
+    pids = _find_watchdog_pids()
+    if pids:
         for pid in pids:
             try:
                 os.kill(pid, signal.SIGTERM)
+                print(f"Watchdog stopped (PID: {pid})")
             except ProcessLookupError:
                 pass
-        # Wait for them to die
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+    else:
+        print("Watchdog not running.")
+
+
+def _cmd_status(args):
+    pid = _get_daemon_pid()
+    if pid:
         try:
-            subprocess.run(["sleep", "1"], timeout=3)
-        except Exception:
+            r = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "%cpu,%mem,rss,etime"],
+                capture_output=True, text=True, timeout=5,
+            )
+            stats = r.stdout.strip().split("\n")[-1] if r.stdout else "?"
+            print(f"Watchdog is running (PID: {pid})")
+            print(f"  Resources: {stats}")
+            print(f"  Log: {os.path.expanduser('~/.local/share/claude-watchdog/hits.log')}")
+            return
+        except (subprocess.TimeoutExpired, IndexError):
             pass
 
-    # Default: --all --daemon if no specific session given
-    cmd = [sys.executable, "-m", "claude_watchdog.cli"]
-    if args.session:
-        cmd += ["--session", args.session]
+    pids = _find_watchdog_pids()
+    if pids:
+        print(f"Watchdog is running (PID: {', '.join(str(p) for p in pids)})")
     else:
-        cmd += ["--all"]
-    cmd += ["--daemon", "--interval", str(args.interval or 15)]
-    if args.notify:
-        cmd += ["--notify"]
-    if args.alert_only:
-        cmd += ["--alert-only"]
+        print("Watchdog is not running.")
 
-    print(f"Starting: {' '.join(cmd)}")
-    subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
+
+def _cmd_restart(args):
+    _cmd_stop(args)
+    _cmd_start(args)
+
+
+def _cmd_log(args):
+    read_log(
+        last=args.last,
+        follow=not args.no_follow,
+        session_filter=args.session,
     )
-    print("OK. (run 'claude-watchdog --log --follow' to see activity)")
 
 
 def main():
@@ -67,84 +143,102 @@ def main():
         prog="claude-watchdog",
         description="Claude Code tmux watchdog — auto-unblock permission dialogs",
     )
+    sub = parser.add_subparsers(dest="command", help="Subcommands")
 
-    # Restart mode
-    parser.add_argument("restart", nargs="?", const=False, default=False,
-                        help="Restart the watchdog daemon")
+    # ── start ──
+    p_start = sub.add_parser("start", help="Start the watchdog daemon")
+    p_start.add_argument("--session", "-s", type=str, default=None,
+                         help="Monitor specific session (default: all claude-* sessions)")
+    p_start.add_argument("--interval", "-i", type=int, default=15,
+                         help="Poll interval in seconds (default: 15)")
+    p_start.add_argument("--notify", "-n", action="store_true",
+                         help="Send notification on hit via hermes-notify")
+    p_start.add_argument("--alert-only", action="store_true",
+                         help="Log+notify only, do NOT auto-approve dialogs")
 
-    # Monitor mode
+    # ── stop ──
+    sub.add_parser("stop", help="Stop the watchdog daemon")
+
+    # ── restart ──
+    p_restart = sub.add_parser("restart", help="Restart the watchdog daemon")
+    p_restart.add_argument("--session", "-s", type=str, default=None)
+    p_restart.add_argument("--interval", "-i", type=int, default=15)
+    p_restart.add_argument("--notify", "-n", action="store_true")
+    p_restart.add_argument("--alert-only", action="store_true")
+
+    # ── status ──
+    sub.add_parser("status", help="Show watchdog daemon status")
+
+    # ── log ──
+    p_log = sub.add_parser("log", help="View hit log (follows by default, like tail -f)")
+    p_log.add_argument("--last", type=int, default=20,
+                       help="Last N entries to show on connect (default: 20)")
+    p_log.add_argument("--no-follow", action="store_true",
+                       help="Print last N entries and exit (don't tail)")
+    p_log.add_argument("--session", "-s", type=str, default=None,
+                       help="Filter by session name")
+
+    # ── Legacy flags (keep backward compat) ──
     parser.add_argument("--session", "-s", type=str, default=None,
-                        help="Session name to monitor (e.g. claude-tl)")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--all", "-a", action="store_true",
-                        help="Monitor all claude-* sessions")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--daemon", "-d", action="store_true",
-                        help="Run continuously until session ends")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--interval", "-i", type=int, default=15,
-                        help="Poll interval in seconds (default: 15)")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--notify", "-n", action="store_true",
-                        help="Send notification on hit via hermes-notify")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--alert-only", action="store_true",
-                        help="Log+notify only, do NOT auto-approve dialogs")
-
-    # Log mode
+                        help=argparse.SUPPRESS)
     parser.add_argument("--log", "-l", action="store_true",
-                        help="View hit log")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--last", type=int, default=20,
-                        help="Last N log entries (default: 20)")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--follow", "-f", action="store_true",
-                        help="Tail -f the log")
+                        help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
-    # ── restart mode ──
-    if args.restart is not False or os.path.basename(sys.argv[0]) == "claude-watchdog-restart":
-        _do_restart(args)
+    # ── Subcommand dispatch ──
+    if args.command == "start":
+        _cmd_start(args)
+        return
+    elif args.command == "stop":
+        _cmd_stop(args)
+        return
+    elif args.command == "status":
+        _cmd_status(args)
+        return
+    elif args.command == "restart":
+        _cmd_restart(args)
+        return
+    elif args.command == "log":
+        _cmd_log(args)
         return
 
-    # ── log mode ──
+    # ── Legacy backward compat ──
     if args.log:
         read_log(last=args.last, follow=args.follow, session_filter=args.session)
         return
 
-    # ── daemon without --session or --all: auto-detect ──
-    if args.daemon and not args.session and not args.all:
-        sessions = get_sessions()
-        if not sessions:
-            print("No claude-* tmux sessions found.")
-            sys.exit(1)
-        if len(sessions) == 1:
-            args.session = sessions[0]
-        else:
-            print(f"Multiple sessions found: {', '.join(sessions)}. Use --session or --all.")
-            sys.exit(1)
-
-    # Validate
+    # No subcommand + no legacy flags
     if not args.session and not args.all:
         parser.print_help()
         sys.exit(1)
 
     # One-shot check
-    if not args.daemon:
-        from .watcher import check_session
-        if args.all:
-            sessions = get_sessions()
-            for s in sessions:
-                check_session(s, args.notify, args.alert_only)
-        else:
-            from .watcher import session_exists
-            if not session_exists(args.session):
-                print(f"Session '{args.session}' not found.")
-                sys.exit(1)
-            check_session(args.session, args.notify, args.alert_only)
-        return
-
-    # Daemon mode
+    from .watcher import check_session, session_exists
     if args.all:
-        print(f"Watching all claude-* sessions (interval={args.interval}s)")
-        watch_all(interval=args.interval, use_notify=args.notify, alert_only=args.alert_only)
-    else:
-        print(f"Watching session '{args.session}' (interval={args.interval}s)")
-        watch_loop(args.session, interval=args.interval, use_notify=args.notify, alert_only=args.alert_only)
+        sessions = get_sessions()
+        for s in sessions:
+            check_session(s, args.notify, args.alert_only)
+    elif args.session:
+        if not session_exists(args.session):
+            print(f"Session '{args.session}' not found.")
+            sys.exit(1)
+        check_session(args.session, args.notify, args.alert_only)
+    return
 
 
 if __name__ == "__main__":
