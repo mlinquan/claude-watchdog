@@ -29,8 +29,8 @@ RULES = [
     (
         "interrupted",
         r"Interrupted",
-        ["2", "Enter"],
-        "Interrupted dialog — select option 2 (Bypass/Continue)",
+        ["continue", "Enter"],
+        "Interrupted dialog — type 'continue' to dismiss",
     ),
     (
         "rate_claude",
