@@ -11,21 +11,31 @@ def _ensure_log_dir():
     os.makedirs(LOG_DIR, exist_ok=True)
 
 
-def log_hit(session: str, rule_name: str, detail: str):
+def log_hit(session: str, rule_name: str, detail: str, context: str = ""):
     _ensure_log_dir()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = json.dumps({"ts": ts, "session": session, "rule": rule_name, "detail": detail})
+    entry = {"ts": ts, "session": session, "rule": rule_name, "detail": detail}
+    if context:
+        entry["context"] = context
+    line = json.dumps(entry)
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
     # Also print to stdout so --daemon runner sees it
-    print(f"[{ts}] ⛔ [{session}] {detail}")
+    msg = f"[{ts}] ⛔ [{session}] {detail}"
+    if context:
+        msg += f"\n  ⎿ {context}"
+    print(msg)
 
 
 def _format_entry(entry: dict) -> str:
     ts = entry.get("ts", "?")
     session = entry.get("session", "?")
     detail = entry.get("detail", "")
-    return f"[{ts}] ⛔ [{session}] {detail}"
+    ctx = entry.get("context", "")
+    line = f"[{ts}] ⛔ [{session}] {detail}"
+    if ctx:
+        line += f"\n  ⎿ {ctx}"
+    return line
 
 
 def read_log(last: int = 20, follow: bool = False, session_filter: str | None = None):

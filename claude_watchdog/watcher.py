@@ -59,9 +59,11 @@ def check_session(session: str, use_notify: bool = False, alert_only: bool = Fal
 
     for name, pattern, keys, desc in RULES:
         if re.search(pattern, output, re.MULTILINE):
+            # Extract context around the match (up to 200 chars)
+            ctx = output.strip()[:200] if name == "interrupted" else ""
             if not alert_only:
                 send_keys(session, keys)
-            log_hit(session, name, desc)
+            log_hit(session, name, desc, context=ctx)
             if use_notify:
                 from .notify import send_hit
                 send_hit(session, name, desc)
