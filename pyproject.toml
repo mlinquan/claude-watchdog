@@ -1,7 +1,7 @@
 [project]
 name = "claude-watchdog"
-version = "0.1.9"
-description = "Claude Code tmux watchdog — auto-unblock permission dialogs"
+version = "9.9.9"
+description = "[DEPRECATED] Replaced by claude-tmux-dog (cdog) — see github.com/SnowAIGirl/claude-tmux-dog"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "LinQuan", email = "i@linquan.name"}]
@@ -20,8 +20,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 [project.urls]
-homepage = "https://github.com/mlinquan/claude-watchdog"
-repository = "https://github.com/mlinquan/claude-watchdog"
+homepage = "https://github.com/SnowAIGirl/claude-tmux-dog"
+repository = "https://github.com/SnowAIGirl/claude-tmux-dog"
 
 [project.scripts]
 claude-watchdog = "claude_watchdog.cli:main"
